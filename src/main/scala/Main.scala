@@ -33,5 +33,5 @@ class Consumer {
 
 object Main extends App {
   val consumer = new Consumer
-  consumer.consumeFromKafka("test", 10)
+  consumer.consumeFromKafka("game", 10)
 }
