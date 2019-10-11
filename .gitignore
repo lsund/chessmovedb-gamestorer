@@ -1,0 +1,6 @@
+.bloop
+.metals
+.scalafmt.conf
+
+target
+data
