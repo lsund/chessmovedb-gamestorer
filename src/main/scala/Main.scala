@@ -37,12 +37,13 @@ object Main extends App {
   }
 
   def suggest(jsonTurns: String, xa: Database.PostgresTransactor) {
-    val turns = decode[List[Database.Turn]](jsonTurns)
-    turns match {
+    val decodedTurns = decode[List[Database.Turn]](jsonTurns)
+    decodedTurns match {
       case Left(error) =>
-        println("Could not parse Kafka message:" + turns)
-      case Right(game) =>
-        println(turns)
+        println("Could not parse Kafka message:" + error)
+      case Right(turns) =>
+        println("Printing games with turns" + turns.mkString(" "))
+        println(turns.foreach(x => println(Database.gamesWithTurn(xa, x))))
     }
   }
   object Consumer extends DatabaseTypes {
@@ -111,6 +112,7 @@ object Main extends App {
   }
   gameConsumption.start
   queryConsumption.start
+
 
   val mainThread = Thread.currentThread
   Runtime.getRuntime

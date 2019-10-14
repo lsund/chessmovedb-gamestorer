@@ -19,7 +19,9 @@ object Database extends DatabaseTypes {
 
   case class Metadata(key: String, value: String) {}
 
-  case class Turn(number: Int, white: String, black: String) {}
+  case class Turn(number: Int, white: String, black: String) {
+    override def toString = s"Turn($number, $white, $black)"
+  }
 
   case class Game(metadata: List[Metadata], turns: List[Turn], score: String) {}
 
@@ -92,9 +94,7 @@ object Database extends DatabaseTypes {
       .updateMany(metadata.map(x => metadataToTuple(1, x)))
   }
 
-  def insertGame(xa: Transactor.Aux[IO, Unit], game: Game) {
-    val y = xa.yolo
-    import y._
+  def insertGame(xa: PostgresTransactor, game: Game) {
     val score = game.score
     val id :: _ = sql"insert into game (score) values ($score) RETURNING id;"
       .query[Int]
@@ -102,7 +102,18 @@ object Database extends DatabaseTypes {
       .transact(xa)
       .unsafeRunSync
       .take(1)
-    insertTurns(id, game.turns).quick.unsafeRunSync
-    insertMetadata(id, game.metadata).quick.unsafeRunSync
+    insertTurns(id, game.turns).transact(xa).unsafeRunSync
+    insertMetadata(id, game.metadata).transact(xa).unsafeRunSync
+  }
+
+  def gamesWithTurn(xa: PostgresTransactor, turn: Turn): List[Int] = {
+    val number = turn.number
+    val white = turn.white
+    val black = turn.black
+    sql"select gameid from turn where number = $number and white = $white and black = $black"
+      .query[Int]
+      .to[List]
+      .transact(xa)
+      .unsafeRunSync
   }
 }
