@@ -43,7 +43,11 @@ object Main extends App {
         println("Could not parse Kafka message:" + error)
       case Right(turns) =>
         println("Printing games with turns" + turns.mkString(" "))
-        println(turns.foreach(x => println(Database.gamesWithTurn(xa, x))))
+        val games = turns.map(x => Database.gamesWithTurn(xa, x).toSet)
+        val intersection = games.foldLeft(games.head) { (acc, x) =>
+          x.toSet.intersect(acc)
+        }
+        println(intersection)
     }
   }
   object Consumer extends DatabaseTypes {
@@ -112,7 +116,6 @@ object Main extends App {
   }
   gameConsumption.start
   queryConsumption.start
-
 
   val mainThread = Thread.currentThread
   Runtime.getRuntime
