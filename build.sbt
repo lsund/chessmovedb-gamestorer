@@ -1,5 +1,5 @@
 scalaVersion := "2.12.10"
-name := "gamestorer"
+name := "chessmovedb-gamestorer"
 organization := "com.github.lsund"
 version := "1.0.0"
 

@@ -1,4 +1,4 @@
-package com.github.lsund.gamestorer
+package com.github.lsund.chessmovedb_gamestorer
 
 import scala.concurrent.ExecutionContext
 import doobie.implicits._

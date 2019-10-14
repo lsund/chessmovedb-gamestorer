@@ -1,4 +1,4 @@
-package com.github.lsund.gamestorer
+package com.github.lsund.chessmovedb_gamestorer
 
 import java.util
 import io.circe._, io.circe.generic.auto._, io.circe.parser._, io.circe.syntax._
