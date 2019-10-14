@@ -94,6 +94,7 @@ object Main extends App {
          );
          CREATE TABLE Metadata (
            id   SERIAL PRIMARY KEY,
+           gameid INT NOT NULL,
            key TEXT NOT NULL,
            value TEXT NOT NULL
          );
@@ -120,30 +121,46 @@ object Main extends App {
   val y = xa.yolo
   import y._
 
-  type TurnTuple = (Int, Int, String, String)
-  def turnToTuple(gameid: Int, turn: Turn): TurnTuple = {
+  def turnToTuple(gameid: Int, turn: Turn): (Int, Int, String, String) = {
     return (gameid, turn.number, turn.white, turn.black)
+  }
+
+  def metadataToTuple(
+      gameid: Int,
+      metadata: Metadata
+  ): (Int, String, String) = {
+    (gameid, metadata.key, metadata.value)
   }
 
   def insertTurns(gameid: Int, turns: List[Turn]): ConnectionIO[Int] = {
     val sql =
       "insert into turn (gameid, number, white, black) values (?, ?, ?, ?)"
-    Update[TurnTuple](sql).updateMany(turns.map(x => turnToTuple(1, x)))
+    Update[(Int, Int, String, String)](sql)
+      .updateMany(turns.map(x => turnToTuple(1, x)))
   }
+
+  def insertMetadata(
+      gameid: Int,
+      metadata: List[Metadata]
+  ): ConnectionIO[Int] = {
+    val sql =
+      "insert into metadata (gameid, key, value) values (?, ?, ?)"
+    Update[(Int, String, String)](sql)
+      .updateMany(metadata.map(x => metadataToTuple(1, x)))
+  }
+
+  resetDatabase(xa)
 
   decodedGame match {
     case Left(error) => println("Error")
     case Right(Game(metadata, turns, score)) =>
-      println(turns)
-      insertTurns(1, turns).quick.unsafeRunSync
+      val id :: _ = sql"insert into game (score) values ($score) RETURNING id;"
+        .query[Int]
+        .to[List]
+        .transact(xa)
+        .unsafeRunSync
+        .take(1)
+      insertTurns(id, turns).quick.unsafeRunSync
+      insertMetadata(id, metadata).quick.unsafeRunSync
   }
-
-  // def find(): ConnectionIO[Option[Turn]] =
-  //   sql"select * from Turn"
-  //     .query[Turn]
-  //     .option
-
-  // val res = find().transact(xa).unsafeRunSync
-  println("Done")
-
 }
