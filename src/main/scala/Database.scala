@@ -11,7 +11,11 @@ import cats._
 import cats.data._
 import cats.implicits._
 
-class Database {
+trait DatabaseTypes {
+  type PostgresTransactor = Transactor.Aux[IO, Unit]
+}
+
+object Database extends DatabaseTypes {
 
   case class Metadata(key: String, value: String) {}
 
@@ -19,7 +23,7 @@ class Database {
 
   case class Game(metadata: List[Metadata], turns: List[Turn], score: String) {}
 
-  def resetDatabase(xa: Transactor.Aux[IO, Unit]) = {
+  def resetDatabase(xa: PostgresTransactor) = {
     val drop =
       sql"""
          DROP TABLE IF EXISTS Turn;

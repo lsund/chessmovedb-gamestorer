@@ -11,21 +11,6 @@ import scala.collection.JavaConverters._
 
 object Main extends App {
 
-  def makeKafkaConsumer(): KafkaConsumer[String, String] = {
-    val props = new Properties()
-    props.put("bootstrap.servers", "localhost:9092")
-    props.put(
-      "key.deserializer",
-      "org.apache.kafka.common.serialization.StringDeserializer"
-    )
-    props.put(
-      "value.deserializer",
-      "org.apache.kafka.common.serialization.StringDeserializer"
-    )
-    props.put("group.id", "consumer-group")
-    return new KafkaConsumer[String, String](props)
-  }
-
   def makeKafkaProducer(): KafkaProducer[String, String] = {
     val props = new Properties()
     props.put("bootstrap.servers", "localhost:9092")
@@ -40,54 +25,99 @@ object Main extends App {
     return new KafkaProducer[String, String](props)
   }
 
-  def consumeMessage(
-      consumer: KafkaConsumer[String, String],
-      topic: String,
-      db: Database
-  ): String = {
-    val xa = db.transactor()
-    consumer.subscribe(util.Arrays.asList(topic))
-    while (true) {
-      val record = consumer.poll(1000).asScala
-      for (data <- record.iterator) {
-        val message = data.value()
-        val decodedGame = decode[db.Game](message)
-        decodedGame match {
-          case Left(error) =>
-            println("Could not parse Kafka message:" + message)
-          case Right(game) =>
-            db.insertGame(xa, game)
-            println("Consumed and inserted game")
+  def decodeAndInsert(jsonGame: String, xa: Database.PostgresTransactor) {
+    val decodedGame = decode[Database.Game](jsonGame)
+    decodedGame match {
+      case Left(error) =>
+        println("Could not parse Kafka message:" + jsonGame)
+      case Right(game) =>
+        Database.insertGame(xa, game)
+        println("Consumed and inserted game")
+    }
+  }
+
+  def suggest(jsonTurns: String, xa: Database.PostgresTransactor) {
+    val turns = decode[List[Database.Turn]](jsonTurns)
+    turns match {
+      case Left(error) =>
+        println("Could not parse Kafka message:" + turns)
+      case Right(game) =>
+        println(turns)
+    }
+  }
+  object Consumer extends DatabaseTypes {
+    def make(): KafkaConsumer[String, String] = {
+      val props = new Properties()
+      props.put("bootstrap.servers", "localhost:9092")
+      props.put(
+        "key.deserializer",
+        "org.apache.kafka.common.serialization.StringDeserializer"
+      )
+      props.put(
+        "value.deserializer",
+        "org.apache.kafka.common.serialization.StringDeserializer"
+      )
+      props.put("group.id", "consumer-group")
+      return new KafkaConsumer[String, String](props)
+    }
+
+    def consumeMessage(
+        consumer: KafkaConsumer[String, String],
+        topic: String,
+        xa: PostgresTransactor,
+        action: (String, PostgresTransactor) => Unit
+    ): String = {
+      consumer.subscribe(util.Arrays.asList(topic))
+      while (true) {
+        val record = consumer.poll(1000).asScala
+        for (data <- record.iterator) {
+          val message = data.value()
+          action(message, xa)
         }
       }
+      return ""
     }
-    return ""
   }
 
   // val producer = makeKafkaProducer()
 
-  val db = new Database()
-  val consumer = makeKafkaConsumer()
+  val xa = Database.transactor()
 
+  val gameConsumer = Consumer.make()
   val gameConsumption = new Thread {
     override def run {
       try {
-        consumeMessage(consumer, "game", db)
+        Consumer.consumeMessage(gameConsumer, "game", xa, decodeAndInsert)
       } catch {
         case e: WakeupException =>
         // Ignore
       } finally {
-        consumer.close()
+        gameConsumer.close()
+      }
+    }
+  }
+  val queryConsumer = Consumer.make()
+  val queryConsumption = new Thread {
+    override def run {
+      try {
+        Consumer.consumeMessage(queryConsumer, "query", xa, suggest)
+      } catch {
+        case e: WakeupException =>
+        // Ignore
+      } finally {
+        queryConsumer.close()
       }
     }
   }
   gameConsumption.start
+  queryConsumption.start
 
   val mainThread = Thread.currentThread
   Runtime.getRuntime
     .addShutdownHook(new Thread() {
       override def run {
-        consumer.wakeup
+        gameConsumer.wakeup
+        queryConsumer.wakeup
         try {
           mainThread.join
         } catch {
