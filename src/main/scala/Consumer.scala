@@ -3,10 +3,10 @@ package com.github.lsund.chessmovedb_store
 import java.util
 import io.circe._, io.circe.generic.auto._
 import io.circe.parser._, io.circe.syntax._
-import org.apache.kafka.clients.consumer._
 import org.apache.kafka.common.errors.WakeupException
 import scala.collection.JavaConverters._
 import java.util.Properties
+import org.apache.kafka.clients.consumer._
 import org.apache.kafka.clients.producer._
 
 object Consumer extends DatabaseTypes {
@@ -63,15 +63,25 @@ object GameConsumer extends Runnable {
   }
 }
 
-class QueryConsumer extends Runnable {
+object QueryConsumer extends Runnable {
+
+  def makeKafkaProducer(): KafkaProducer[String, String] = {
+    val props = new Properties()
+    props.put("bootstrap.servers", "localhost:9092")
+    props.put(
+      "key.serializer",
+      "org.apache.kafka.common.serialization.StringSerializer"
+    )
+    props.put(
+      "value.serializer",
+      "org.apache.kafka.common.serialization.StringSerializer"
+    )
+    return new KafkaProducer[String, String](props)
+  }
+
   val xa = Database.transactor()
   val consumer = Consumer.make()
-  var producer: KafkaProducer[String, String] = null
-
-  def this(producer: KafkaProducer[String, String]) {
-    this()
-    this.producer = producer
-  }
+  val producer: KafkaProducer[String, String] = makeKafkaProducer()
 
   def produceSuggestion(jsonTurns: String, xa: Database.PostgresTransactor) {
     val decodedTurns = decode[List[Database.Turn]](jsonTurns)
@@ -87,6 +97,7 @@ class QueryConsumer extends Runnable {
           if (t1.number > t2.number) t1 else t2
         }
         try {
+          println("Sending suggestion")
           producer.send(
             new ProducerRecord[String, String](
               "suggestion",
