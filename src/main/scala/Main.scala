@@ -47,6 +47,14 @@ object Main extends App {
         val intersection = games.foldLeft(games.head) { (acc, x) =>
           x.toSet.intersect(acc)
         }
+        def maxNumber(t1: Database.Turn, t2: Database.Turn): Database.Turn = {
+          if (t1.number > t2.number) t1 else t2
+        }
+        Database.nextMoves(
+          xa,
+          intersection.toList,
+          turns.reduceLeft(maxNumber).number
+        )
         println(intersection)
     }
   }
