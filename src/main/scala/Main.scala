@@ -1,4 +1,4 @@
-package com.github.lsund.chessmovedb_gamestorer
+package com.github.lsund.chessmovedb_store
 
 import java.lang.Runtime
 import java.util
