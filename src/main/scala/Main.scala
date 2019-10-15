@@ -23,7 +23,7 @@ object Main extends App {
 
   val producer = makeKafkaProducer()
   val gameConsumer = GameConsumer
-  val queryConsumer = QueryConsumer
+  val queryConsumer = new QueryConsumer(makeKafkaProducer())
   new Thread(gameConsumer).start
   new Thread(queryConsumer).start
 

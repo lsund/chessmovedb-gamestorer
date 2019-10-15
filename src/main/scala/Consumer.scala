@@ -7,6 +7,7 @@ import org.apache.kafka.clients.consumer._
 import org.apache.kafka.common.errors.WakeupException
 import scala.collection.JavaConverters._
 import java.util.Properties
+import org.apache.kafka.clients.producer._
 
 object Consumer extends DatabaseTypes {
   def make(): KafkaConsumer[String, String] = {
@@ -62,9 +63,15 @@ object GameConsumer extends Runnable {
   }
 }
 
-object QueryConsumer extends Runnable {
+class QueryConsumer extends Runnable {
   val xa = Database.transactor()
   val consumer = Consumer.make()
+  var producer: KafkaProducer[String, String] = null
+
+  def this(producer: KafkaProducer[String, String]) {
+    this()
+    this.producer = producer
+  }
 
   def produceSuggestion(jsonTurns: String, xa: Database.PostgresTransactor) {
     val decodedTurns = decode[List[Database.Turn]](jsonTurns)
@@ -72,7 +79,6 @@ object QueryConsumer extends Runnable {
       case Left(error) =>
         println("Could not parse Kafka message:" + error)
       case Right(turns) =>
-        println("Printing games with turns" + turns.mkString(" "))
         val games = turns.map(x => Database.gamesWithTurn(xa, x).toSet)
         val intersection = games.foldLeft(games.head) { (acc, x) =>
           x.toSet.intersect(acc)
@@ -80,11 +86,26 @@ object QueryConsumer extends Runnable {
         def maxNumber(t1: Database.Turn, t2: Database.Turn): Database.Turn = {
           if (t1.number > t2.number) t1 else t2
         }
-        Database.nextMoves(
-          xa,
-          intersection.toList,
-          turns.reduceLeft(maxNumber).number
-        )
+        try {
+          producer.send(
+            new ProducerRecord[String, String](
+              "suggestion",
+              Database
+                .nextMoves(
+                  xa,
+                  intersection.toList,
+                  turns.reduceLeft(maxNumber).number
+                )
+                .asJson
+                .noSpaces
+            )
+          )
+        } catch {
+          case e: Exception => {
+            e.printStackTrace()
+          }
+        }
+        producer.close()
     }
   }
 
