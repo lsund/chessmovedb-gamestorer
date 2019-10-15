@@ -1,5 +1,6 @@
 package com.github.lsund.chessmovedb_store
 
+import cats.data._
 import java.util
 import io.circe._, io.circe.generic.auto._
 import io.circe.parser._, io.circe.syntax._
@@ -83,21 +84,24 @@ object QueryConsumer extends Runnable {
   val consumer = Consumer.make()
   val producer: KafkaProducer[String, String] = makeKafkaProducer()
 
-  def produceSuggestion(jsonTurns: String, xa: Database.PostgresTransactor) {
-    val decodedTurns = decode[List[Database.Turn]](jsonTurns)
-    decodedTurns match {
+  def toTuple[A](xs: List[A]): (A, A) = {
+    (xs(0), xs(1))
+  }
+  def produceSuggestion(jsonPlys: String, xa: Database.PostgresTransactor) {
+    println(jsonPlys)
+    val decodedPlys = decode[List[Ply]](jsonPlys)
+    println(decodedPlys)
+    decodedPlys match {
       case Left(error) =>
         println("Could not parse Kafka message:" + error)
-      case Right(turns) =>
-        val games = turns.map(x => Database.gamesWithTurn(xa, x).toSet)
+      case Right(plys) =>
+        println("Calculating suggestion...")
+        val games = plys.map(x => Database.gamesWithPly(xa, x).toSet)
         val intersection = games.foldLeft(games.head) { (acc, x) =>
           x.toSet.intersect(acc)
         }
-        def maxNumber(t1: Database.Turn, t2: Database.Turn): Database.Turn = {
-          if (t1.number > t2.number) t1 else t2
-        }
         try {
-          println("Sending suggestion")
+          println("Done.")
           producer.send(
             new ProducerRecord[String, String](
               "suggestion",
@@ -105,7 +109,13 @@ object QueryConsumer extends Runnable {
                 .nextMoves(
                   xa,
                   intersection.toList,
-                  turns.reduceLeft(maxNumber).number
+                  plys
+                    .reduceLeft(
+                      (t1, t2) =>
+                        if (t1.number > t2.number) t1
+                        else t2
+                    )
+                    .number
                 )
                 .asJson
                 .noSpaces
@@ -116,7 +126,6 @@ object QueryConsumer extends Runnable {
             e.printStackTrace()
           }
         }
-        producer.close()
     }
   }
 
@@ -135,6 +144,7 @@ object QueryConsumer extends Runnable {
       // Ignore
     } finally {
       consumer.close()
+      producer.close()
     }
   }
   def shutdown() {

@@ -19,10 +19,6 @@ object Database extends DatabaseTypes {
 
   case class Metadata(key: String, value: String) {}
 
-  case class Turn(number: Int, white: String, black: String) {
-    override def toString = s"Turn($number, $white, $black)"
-  }
-
   case class Game(metadata: List[Metadata], turns: List[Turn], score: String) {}
 
   def resetDatabase(xa: PostgresTransactor) = {
@@ -104,6 +100,23 @@ object Database extends DatabaseTypes {
       .take(1)
     insertTurns(id, game.turns).transact(xa).unsafeRunSync
     insertMetadata(id, game.metadata).transact(xa).unsafeRunSync
+  }
+
+  def gamesWithPly(xa: PostgresTransactor, ply: Ply): List[Int] = {
+    val sql = if (ply.color == "white") {
+      sql"""SELECT gameid FROM turn
+          WHERE number = ${ply.number}
+          AND white = ${ply.move}"""
+    } else {
+      sql"""SELECT gameid FROM turn
+          WHERE number = ${ply.number}
+          AND black = ${ply.move}"""
+    }
+    sql
+      .query[Int]
+      .to[List]
+      .transact(xa)
+      .unsafeRunSync
   }
 
   def gamesWithTurn(xa: PostgresTransactor, turn: Turn): List[Int] = {
