@@ -107,22 +107,27 @@ object Database extends DatabaseTypes {
   }
 
   def gamesWithTurn(xa: PostgresTransactor, turn: Turn): List[Int] = {
-    sql"""select gameid from turn
-          where number = ${turn.number}
-          and white = ${turn.white}
-          and black = ${turn.black}"""
+    sql"""SELECT gameid FROM turn
+          WHERE number = ${turn.number}
+          AND white = ${turn.white}
+          AND black = ${turn.black}"""
       .query[Int]
       .to[List]
       .transact(xa)
       .unsafeRunSync
   }
 
-  def nextMoves(xa: PostgresTransactor, ids: List[Int], maxNumber: Int) {
-    val foo = sql"SELECT * FROM turn WHERE gameid = ${ids.head} and number = $maxNumber"
+  def nextMoves(
+      xa: PostgresTransactor,
+      ids: List[Int],
+      maxNumber: Int
+  ): List[Turn] = {
+    sql"""SELECT number, white, black
+                    FROM turn
+                    WHERE gameid = ${ids.head} AND number = ${maxNumber + 1}"""
       .query[Turn]
       .to[List]
       .transact(xa)
       .unsafeRunSync
-    println(foo)
   }
 }
