@@ -48,7 +48,7 @@ case class GameConsumer(xa: Database.PostgresTransactor) extends Runnable {
 
   def decodeAndInsert(
       gameid: String,
-      jsonGame: String,
+      jsonGame: String
   ) {
     val cursor = parse(jsonGame).getOrElse(Json.Null).hcursor
     val winner = cursor.downField("winner").as[String].getOrElse("none")
@@ -85,9 +85,8 @@ case class GameConsumer(xa: Database.PostgresTransactor) extends Runnable {
   }
 }
 
-case class QueryConsumer(xa: Database.PostgresTransactor) extends Runnable {
-
-  def makeKafkaProducer(): KafkaProducer[String, String] = {
+object Producer {
+  def make(): KafkaProducer[String, String] = {
     val props = new Properties()
     props.put("bootstrap.servers", "localhost:9092")
     props.put(
@@ -100,9 +99,12 @@ case class QueryConsumer(xa: Database.PostgresTransactor) extends Runnable {
     )
     return new KafkaProducer[String, String](props)
   }
+}
+
+case class QueryConsumer(xa: Database.PostgresTransactor) extends Runnable {
 
   val consumer = Consumer.make()
-  val producer: KafkaProducer[String, String] = makeKafkaProducer()
+  val producer: KafkaProducer[String, String] = Producer.make()
 
   def toTuple[A](xs: List[A]): (A, A) = {
     (xs(0), xs(1))
@@ -128,11 +130,7 @@ case class QueryConsumer(xa: Database.PostgresTransactor) extends Runnable {
             new ProducerRecord[String, String](
               "suggestion",
               Database
-                .nextPlys(
-                  xa,
-                  intersection.toList,
-                  plys
-                )
+                .nextPlys(xa, intersection.toList, plys)
                 .asJson
                 .noSpaces
             )
