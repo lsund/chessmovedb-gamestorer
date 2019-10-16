@@ -43,7 +43,7 @@ object Database extends DatabaseTypes {
       """
   }
 
-  def resetDatabase(xa: PostgresTransactor) = {
+  def reset(xa: PostgresTransactor) = {
 
     (dropSql().update.run, createSql().update.run)
       .mapN(_ + _)
@@ -51,7 +51,7 @@ object Database extends DatabaseTypes {
       .unsafeRunSync
   }
 
-  def initDatabase(xa: PostgresTransactor) {
+  def init(xa: PostgresTransactor) {
     dropSql().update.run.transact(xa).unsafeRunSync
   }
 

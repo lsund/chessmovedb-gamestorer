@@ -11,6 +11,8 @@ object Main extends App {
   new Thread(queryConsumer).start
   val mainThread = Thread.currentThread
 
+  Database.init(xa)
+
   Runtime.getRuntime
     .addShutdownHook(new Thread() {
       override def run {
