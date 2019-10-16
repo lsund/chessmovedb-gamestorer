@@ -28,8 +28,8 @@ object Consumer extends DatabaseTypes {
   }
 }
 
-object GameConsumer extends Runnable {
-  val xa = Database.transactor()
+case class GameConsumer(xa: Database.PostgresTransactor) extends Runnable {
+
   val consumer = Consumer.make()
 
   def movesToTurns(moves: Array[Array[String]]): List[Turn] = {
@@ -49,7 +49,6 @@ object GameConsumer extends Runnable {
   def decodeAndInsert(
       gameid: String,
       jsonGame: String,
-      xa: Database.PostgresTransactor
   ) {
     val cursor = parse(jsonGame).getOrElse(Json.Null).hcursor
     val winner = cursor.downField("winner").as[String].getOrElse("none")
@@ -72,7 +71,7 @@ object GameConsumer extends Runnable {
         val record = consumer.poll(1000).asScala
         for (data <- record.iterator) {
           println("Inserting game...")
-          decodeAndInsert(data.key(), data.value(), xa)
+          decodeAndInsert(data.key(), data.value())
         }
       }
     } catch {
@@ -86,7 +85,7 @@ object GameConsumer extends Runnable {
   }
 }
 
-object QueryConsumer extends Runnable {
+case class QueryConsumer(xa: Database.PostgresTransactor) extends Runnable {
 
   def makeKafkaProducer(): KafkaProducer[String, String] = {
     val props = new Properties()
@@ -102,14 +101,13 @@ object QueryConsumer extends Runnable {
     return new KafkaProducer[String, String](props)
   }
 
-  val xa = Database.transactor()
   val consumer = Consumer.make()
   val producer: KafkaProducer[String, String] = makeKafkaProducer()
 
   def toTuple[A](xs: List[A]): (A, A) = {
     (xs(0), xs(1))
   }
-  def produceSuggestion(jsonPlys: String, xa: Database.PostgresTransactor) {
+  def produceSuggestion(jsonPlys: String) {
     val decodedPlys = decode[List[Ply]](jsonPlys)
     decodedPlys match {
       case Left(error) =>
@@ -154,7 +152,7 @@ object QueryConsumer extends Runnable {
         val record = consumer.poll(1000).asScala
         for (data <- record.iterator) {
           val message = data.value()
-          produceSuggestion(message, xa)
+          produceSuggestion(message)
         }
       }
     } catch {

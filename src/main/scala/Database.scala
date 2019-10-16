@@ -20,29 +20,39 @@ object Database extends DatabaseTypes {
 
   case class Game(lichessId: String, winner: String, turns: List[Turn])
 
-  def resetDatabase(xa: PostgresTransactor) = {
-    val drop =
-      sql"""
-         DROP TABLE IF EXISTS Turn;
-         DROP TABLE IF EXISTS Game;
-      """.update.run
+  def createSql(): Fragment = {
+    sql"""
+       CREATE TABLE IF NOT EXISTS Turn (
+         id           SERIAL PRIMARY KEY,
+         gameid       INT NOT NULL,
+         number       INT NOT NULL,
+         white        TEXT NOT NULL,
+         black        TEXT NOT NULL
+       );
+       CREATE TABLE IF NOT EXISTS Game (
+         id           SERIAL PRIMARY KEY,
+         lichessid    TEXT NOT NULL,
+         winner       TEXT NOT NULL
+       );"""
+  }
 
-    val create =
-      sql"""
-         CREATE TABLE Turn (
-           id           SERIAL PRIMARY KEY,
-           gameid       INT NOT NULL,
-           number       INT NOT NULL,
-           white        TEXT NOT NULL,
-           black        TEXT NOT NULL
-         );
-         CREATE TABLE Game (
-           id           SERIAL PRIMARY KEY,
-           lichessid    TEXT NOT NULL,
-           winner       TEXT NOT NULL
-         );
-      """.update.run
-    (drop, create).mapN(_ + _).transact(xa).unsafeRunSync
+  def dropSql(): Fragment = {
+    sql"""
+       DROP TABLE IF EXISTS Turn;
+       DROP TABLE IF EXISTS Game;
+      """
+  }
+
+  def resetDatabase(xa: PostgresTransactor) = {
+
+    (dropSql().update.run, createSql().update.run)
+      .mapN(_ + _)
+      .transact(xa)
+      .unsafeRunSync
+  }
+
+  def initDatabase(xa: PostgresTransactor) {
+    dropSql().update.run.transact(xa).unsafeRunSync
   }
 
   def transactor(): Transactor.Aux[IO, Unit] = {

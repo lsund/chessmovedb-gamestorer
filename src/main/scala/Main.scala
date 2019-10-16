@@ -4,8 +4,9 @@ import java.lang.Runtime
 
 object Main extends App {
 
-  val gameConsumer = GameConsumer
-  val queryConsumer = QueryConsumer
+  val xa = Database.transactor()
+  val gameConsumer = new GameConsumer(xa)
+  val queryConsumer = QueryConsumer(xa)
   new Thread(gameConsumer).start
   new Thread(queryConsumer).start
   val mainThread = Thread.currentThread
