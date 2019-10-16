@@ -10,6 +10,7 @@ import java.util.Properties
 import org.apache.kafka.clients.consumer._
 import org.apache.kafka.clients.producer._
 import java.text.ParseException
+import com.typesafe.scalalogging._
 
 object Consumer extends DatabaseTypes {
   def make(): KafkaConsumer[String, String] = {
@@ -28,7 +29,8 @@ object Consumer extends DatabaseTypes {
   }
 }
 
-case class GameConsumer(xa: Database.PostgresTransactor) extends Runnable {
+case class GameConsumer(xa: Database.PostgresTransactor, logger: Logger)
+    extends Runnable {
 
   val consumer = Consumer.make()
 
@@ -57,10 +59,10 @@ case class GameConsumer(xa: Database.PostgresTransactor) extends Runnable {
     (moves.map(movesToTurns)) match {
       case Right(turns) =>
         Database.insertGame(xa, Database.Game(gameid, winner, turns))
-        println("Done.")
+        logger.info("Done.")
       case _ =>
-        println("Could not parse: " + jsonGame)
-        println("Game not inserted")
+        logger.error("Could not parse: " + jsonGame)
+        logger.error("Game not inserted")
     }
   }
 
@@ -70,7 +72,7 @@ case class GameConsumer(xa: Database.PostgresTransactor) extends Runnable {
       while (true) {
         val record = consumer.poll(1000).asScala
         for (data <- record.iterator) {
-          println("Inserting game...")
+          logger.info("Inserting game...")
           decodeAndInsert(data.key(), data.value())
         }
       }
@@ -101,7 +103,8 @@ object Producer {
   }
 }
 
-case class QueryConsumer(xa: Database.PostgresTransactor) extends Runnable {
+case class QueryConsumer(xa: Database.PostgresTransactor, logger: Logger)
+    extends Runnable {
 
   val consumer = Consumer.make()
   val producer: KafkaProducer[String, String] = Producer.make()
@@ -113,9 +116,9 @@ case class QueryConsumer(xa: Database.PostgresTransactor) extends Runnable {
     val decodedPlys = decode[List[Ply]](jsonPlys)
     decodedPlys match {
       case Left(error) =>
-        println("Could not parse Kafka message:" + error)
+        logger.info("Could not parse Kafka message:" + error)
       case Right(plys) =>
-        println("Calculating suggestion...")
+        logger.info("Calculating suggestion...")
         val games = plys.map(x => Database.gamesWithPly(xa, x).toSet)
         val intersection = if (games.isEmpty) {
           Set.empty
@@ -125,7 +128,7 @@ case class QueryConsumer(xa: Database.PostgresTransactor) extends Runnable {
           }
         }
         try {
-          println("Done.")
+          logger.info("Done.")
           producer.send(
             new ProducerRecord[String, String](
               "suggestion",
