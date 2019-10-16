@@ -52,7 +52,7 @@ object Database extends DatabaseTypes {
   }
 
   def init(xa: PostgresTransactor) {
-    dropSql().update.run.transact(xa).unsafeRunSync
+    createSql().update.run.transact(xa).unsafeRunSync
   }
 
   def transactor(): Transactor.Aux[IO, Unit] = {

@@ -11,6 +11,7 @@ object Main extends App {
   new Thread(queryConsumer).start
   val mainThread = Thread.currentThread
 
+  println("Initializing database")
   Database.init(xa)
 
   Runtime.getRuntime
