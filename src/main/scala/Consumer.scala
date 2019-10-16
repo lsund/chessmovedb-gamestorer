@@ -88,17 +88,19 @@ object QueryConsumer extends Runnable {
     (xs(0), xs(1))
   }
   def produceSuggestion(jsonPlys: String, xa: Database.PostgresTransactor) {
-    println(jsonPlys)
     val decodedPlys = decode[List[Ply]](jsonPlys)
-    println(decodedPlys)
     decodedPlys match {
       case Left(error) =>
         println("Could not parse Kafka message:" + error)
       case Right(plys) =>
         println("Calculating suggestion...")
         val games = plys.map(x => Database.gamesWithPly(xa, x).toSet)
-        val intersection = games.foldLeft(games.head) { (acc, x) =>
-          x.toSet.intersect(acc)
+        val intersection = if (games.isEmpty) {
+          Set.empty
+        } else {
+          games.foldLeft(games.head) { (acc, x) =>
+            x.toSet.intersect(acc)
+          }
         }
         try {
           println("Done.")
@@ -106,16 +108,10 @@ object QueryConsumer extends Runnable {
             new ProducerRecord[String, String](
               "suggestion",
               Database
-                .nextMoves(
+                .nextPlys(
                   xa,
                   intersection.toList,
                   plys
-                    .reduceLeft(
-                      (t1, t2) =>
-                        if (t1.number > t2.number) t1
-                        else t2
-                    )
-                    .number
                 )
                 .asJson
                 .noSpaces

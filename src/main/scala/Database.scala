@@ -6,6 +6,7 @@ import doobie.Update0
 import doobie.Transactor
 import doobie.Update
 import doobie.ConnectionIO
+import doobie.Fragment
 import cats.effect.IO
 import cats._
 import cats.data._
@@ -130,17 +131,31 @@ object Database extends DatabaseTypes {
       .unsafeRunSync
   }
 
-  def nextMoves(
-      xa: PostgresTransactor,
-      ids: List[Int],
-      maxNumber: Int
-  ): List[Turn] = {
+  def turnQuery(xa: PostgresTransactor, id: Int, number: Int): List[Turn] = {
     sql"""SELECT number, white, black
-                    FROM turn
-                    WHERE gameid = ${ids.head} AND number = ${maxNumber + 1}"""
+          FROM turn
+          WHERE gameid = ${id} AND number = ${number}"""
       .query[Turn]
       .to[List]
       .transact(xa)
       .unsafeRunSync
+  }
+
+  def nextPlys(
+      xa: PostgresTransactor,
+      ids: List[Int],
+      plys: List[Ply]
+  ): List[Ply] = {
+    if (plys.length % 2 == 0) {
+      ids
+        .map(id => turnQuery(xa, id, plys.last.number + 1))
+        .flatten
+        .map(turn => Ply(turn.number, "white", turn.white))
+    } else {
+      ids
+        .map(id => turnQuery(xa, id, plys.last.number))
+        .flatten
+        .map(turn => Ply(turn.number, "black", turn.black))
+    }
   }
 }
