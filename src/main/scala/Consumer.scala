@@ -9,6 +9,7 @@ import scala.collection.JavaConverters._
 import java.util.Properties
 import org.apache.kafka.clients.consumer._
 import org.apache.kafka.clients.producer._
+import java.text.ParseException
 
 object Consumer extends DatabaseTypes {
   def make(): KafkaConsumer[String, String] = {
@@ -31,14 +32,36 @@ object GameConsumer extends Runnable {
   val xa = Database.transactor()
   val consumer = Consumer.make()
 
-  def decodeAndInsert(jsonGame: String, xa: Database.PostgresTransactor) {
-    val decodedGame = decode[Database.Game](jsonGame)
-    decodedGame match {
-      case Left(error) =>
-        println("Could not parse Kafka message:" + jsonGame)
-      case Right(game) =>
-        Database.insertGame(xa, game)
-        println("Consumed and inserted game")
+  def movesToTurns(moves: Array[Array[String]]): List[Turn] = {
+    moves
+      .zip(Stream.from(1))
+      .toList
+      .map({
+        case (xs, id) =>
+          if (xs.length % 2 == 0) {
+            Turn(id, xs(0), xs(1))
+          } else {
+            Turn(id, xs(0), "")
+          }
+      })
+  }
+
+  def decodeAndInsert(
+      gameid: String,
+      jsonGame: String,
+      xa: Database.PostgresTransactor
+  ) {
+    val cursor = parse(jsonGame).getOrElse(Json.Null).hcursor
+    val winner = cursor.downField("winner").as[String].getOrElse("none")
+    val moveString = cursor.downField("moves").as[String]
+    val moves = moveString.map(x => x.split(" ").grouped(2).toArray)
+    (moves.map(movesToTurns)) match {
+      case Right(turns) =>
+        Database.insertGame(xa, Database.Game(gameid, winner, turns))
+        println("Done.")
+      case _ =>
+        println("Could not parse: " + jsonGame)
+        println("Game not inserted")
     }
   }
 
@@ -48,13 +71,12 @@ object GameConsumer extends Runnable {
       while (true) {
         val record = consumer.poll(1000).asScala
         for (data <- record.iterator) {
-          val message = data.value()
-          decodeAndInsert(message, xa)
+          println("Inserting game...")
+          decodeAndInsert(data.key(), data.value(), xa)
         }
       }
     } catch {
-      case e: WakeupException =>
-      // Ignore
+      case e: WakeupException => // ignore
     } finally {
       consumer.close()
     }
@@ -136,8 +158,7 @@ object QueryConsumer extends Runnable {
         }
       }
     } catch {
-      case e: WakeupException =>
-      // Ignore
+      case e: WakeupException => // ignore
     } finally {
       consumer.close()
       producer.close()

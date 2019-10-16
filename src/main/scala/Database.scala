@@ -18,36 +18,28 @@ trait DatabaseTypes {
 
 object Database extends DatabaseTypes {
 
-  case class Metadata(key: String, value: String) {}
-
-  case class Game(metadata: List[Metadata], turns: List[Turn], score: String) {}
+  case class Game(lichessId: String, winner: String, turns: List[Turn])
 
   def resetDatabase(xa: PostgresTransactor) = {
     val drop =
       sql"""
          DROP TABLE IF EXISTS Turn;
-         DROP TABLE IF EXISTS Metadata;
          DROP TABLE IF EXISTS Game;
       """.update.run
 
     val create =
       sql"""
          CREATE TABLE Turn (
-           id   SERIAL PRIMARY KEY,
-           gameid INT NOT NULL,
-           number INT NOT NULL,
-           white TEXT NOT NULL,
-           black TEXT NOT NULL
-         );
-         CREATE TABLE Metadata (
-           id   SERIAL PRIMARY KEY,
-           gameid INT NOT NULL,
-           key TEXT NOT NULL,
-           value TEXT NOT NULL
+           id           SERIAL PRIMARY KEY,
+           gameid       INT NOT NULL,
+           number       INT NOT NULL,
+           white        TEXT NOT NULL,
+           black        TEXT NOT NULL
          );
          CREATE TABLE Game (
-           id   SERIAL PRIMARY KEY,
-           score TEXT NOT NULL
+           id           SERIAL PRIMARY KEY,
+           lichessid    TEXT NOT NULL,
+           winner       TEXT NOT NULL
          );
       """.update.run
     (drop, create).mapN(_ + _).transact(xa).unsafeRunSync
@@ -67,40 +59,25 @@ object Database extends DatabaseTypes {
     return (gameid, turn.number, turn.white, turn.black)
   }
 
-  def metadataToTuple(
-      gameid: Int,
-      metadata: Metadata
-  ): (Int, String, String) = {
-    (gameid, metadata.key, metadata.value)
-  }
-
   def insertTurns(gameid: Int, turns: List[Turn]): ConnectionIO[Int] = {
     val sql =
-      "insert into turn (gameid, number, white, black) values (?, ?, ?, ?)"
+      """INSERT INTO turn (gameid, number, white, black)
+         VALUES (?, ?, ?, ?)"""
     Update[(Int, Int, String, String)](sql)
       .updateMany(turns.map(x => turnToTuple(1, x)))
   }
 
-  def insertMetadata(
-      gameid: Int,
-      metadata: List[Metadata]
-  ): ConnectionIO[Int] = {
-    val sql =
-      "insert into metadata (gameid, key, value) values (?, ?, ?)"
-    Update[(Int, String, String)](sql)
-      .updateMany(metadata.map(x => metadataToTuple(1, x)))
-  }
-
   def insertGame(xa: PostgresTransactor, game: Game) {
-    val score = game.score
-    val id :: _ = sql"insert into game (score) values ($score) RETURNING id;"
-      .query[Int]
-      .to[List]
-      .transact(xa)
-      .unsafeRunSync
-      .take(1)
+    val (id: Int) :: _ =
+      sql"""INSERT INTO game (lichessid, winner)
+            VALUES (${game.lichessId}, ${game.winner})
+            RETURNING id"""
+        .query[Int]
+        .to[List]
+        .transact(xa)
+        .unsafeRunSync
+        .take(1)
     insertTurns(id, game.turns).transact(xa).unsafeRunSync
-    insertMetadata(id, game.metadata).transact(xa).unsafeRunSync
   }
 
   def gamesWithPly(xa: PostgresTransactor, ply: Ply): List[Int] = {
