@@ -65,7 +65,7 @@ object Postgres {
       """INSERT INTO turn (gameid, number, white, black)
          VALUES (?, ?, ?, ?)"""
     Update[(Int, Int, String, String)](sql)
-      .updateMany(turns.map(turn => turn.toTuple(1, turn)))
+      .updateMany(turns.map(turn => turn.toTuple(gameid, turn)))
   }
 
   def insertGame(xa: Transactor, game: Game) {

@@ -53,11 +53,12 @@ case class KafkaGameConsumer(xa: Postgres.Transactor, logger: Logger)
   // A movestring is a string like "e4 e5 Nf3 Nc6". This function turns
   // this string into a list of Turns
   def moveStringToTurns(moveString: String): List[Turn] = {
-    moveString
+    val moves = moveString
       .split(" ")
       .grouped(2)
       .toList
-      .zip(Stream.from(1))
+    moves
+      .zip(Stream.from(1).take(moves.length))
       .map({
         case (xs, id) =>
           if (xs.length % 2 == 0) {
