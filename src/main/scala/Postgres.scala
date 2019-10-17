@@ -50,7 +50,6 @@ object Postgres {
   }
 
   def reset(xa: Transactor) = {
-
     (dropSql().update.run, createSql().update.run)
       .mapN(_ + _)
       .transact(xa)
@@ -61,16 +60,12 @@ object Postgres {
     createSql().update.run.transact(xa).unsafeRunSync
   }
 
-  def turnToTuple(gameid: Int, turn: Turn): (Int, Int, String, String) = {
-    return (gameid, turn.number, turn.white, turn.black)
-  }
-
   def insertTurns(gameid: Int, turns: List[Turn]): ConnectionIO[Int] = {
     val sql =
       """INSERT INTO turn (gameid, number, white, black)
          VALUES (?, ?, ?, ?)"""
     Update[(Int, Int, String, String)](sql)
-      .updateMany(turns.map(x => turnToTuple(1, x)))
+      .updateMany(turns.map(turn => turn.toTuple(1, turn)))
   }
 
   def insertGame(xa: Transactor, game: Game) {
@@ -114,7 +109,7 @@ object Postgres {
       .unsafeRunSync
   }
 
-  def turnQuery(xa: Transactor, id: Int, number: Int): List[Turn] = {
+  def queryTurn(xa: Transactor, id: Int, number: Int): List[Turn] = {
     sql"""SELECT number, white, black
           FROM turn
           WHERE gameid = ${id} AND number = ${number}"""
@@ -126,17 +121,17 @@ object Postgres {
 
   def nextPlys(
       xa: Transactor,
-      ids: List[Int],
+      gameids: List[Int],
       plys: List[Ply]
   ): List[Ply] = {
     if (plys.length % 2 == 0) {
-      ids
-        .map(id => turnQuery(xa, id, plys.last.number + 1))
+      gameids
+        .map(id => queryTurn(xa, id, plys.last.number + 1))
         .flatten
         .map(turn => Ply(turn.number, "white", turn.white))
     } else {
-      ids
-        .map(id => turnQuery(xa, id, plys.last.number))
+      gameids
+        .map(id => queryTurn(xa, id, plys.last.number))
         .flatten
         .map(turn => Ply(turn.number, "black", turn.black))
     }

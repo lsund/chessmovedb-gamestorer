@@ -127,27 +127,25 @@ case class KafkaQueryConsumer(xa: Postgres.Transactor, logger: Logger)
   }
 
   def produceSuggestion(jsonPlys: String) {
-    val decodedPlys = decode[List[Ply]](jsonPlys)
-    decodedPlys match {
+    decode[List[Ply]](jsonPlys) match {
       case Left(error) =>
         logger.info("Could not parse Kafka message:" + error)
       case Right(plys) =>
-        logger.info("Calculating suggestion...")
-        val games = plys.map(x => Postgres.gamesWithPly(xa, x).toSet)
+        logger.info("Producing Suggestion")
+        val gameids = plys.map(x => Postgres.gamesWithPly(xa, x).toSet)
         try {
-          logger.info("Done.")
           producer.send(
             new ProducerRecord[String, String](
               "suggestion",
               Postgres
-                .nextPlys(xa, intersectAll(games), plys)
+                .nextPlys(xa, intersectAll(gameids), plys)
                 .asJson
                 .noSpaces
             )
           )
         } catch {
           case e: Exception => {
-            e.printStackTrace()
+            logger.error(e.getStackTraceString)
           }
         }
     }
@@ -170,6 +168,7 @@ case class KafkaQueryConsumer(xa: Postgres.Transactor, logger: Logger)
       producer.close()
     }
   }
+
   def shutdown() {
     consumer.wakeup()
   }

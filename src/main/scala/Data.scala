@@ -7,6 +7,10 @@ case class Ply(number: Int, color: String, move: String)
 // A turn is one move by white and the concecutive move by black
 case class Turn(number: Int, white: String, black: String) {
   override def toString = s"Turn($number, $white, $black)"
+
+  def toTuple(gameid: Int, turn: Turn): (Int, Int, String, String) = {
+    return (gameid, turn.number, turn.white, turn.black)
+  }
 }
 
 // Unique id, winner (white or black) and the list of Turns
