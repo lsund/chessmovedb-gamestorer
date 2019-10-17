@@ -12,13 +12,19 @@ import cats._
 import cats.data._
 import cats.implicits._
 
-trait DatabaseTypes {
-  type PostgresTransactor = Transactor.Aux[IO, Unit]
-}
+object Postgres {
 
-object Database extends DatabaseTypes {
+  type Transactor = Transactor.Aux[IO, Unit]
 
-  case class Game(lichessId: String, winner: String, turns: List[Turn])
+  def transactor(): Transactor = {
+    implicit val cs = IO.contextShift(ExecutionContext.global)
+    return Transactor.fromDriverManager[IO](
+      "org.postgresql.Driver",
+      "jdbc:postgresql:chessgame",
+      "postgres",
+      ""
+    )
+  }
 
   def createSql(): Fragment = {
     sql"""
@@ -43,7 +49,7 @@ object Database extends DatabaseTypes {
       """
   }
 
-  def reset(xa: PostgresTransactor) = {
+  def reset(xa: Transactor) = {
 
     (dropSql().update.run, createSql().update.run)
       .mapN(_ + _)
@@ -51,18 +57,8 @@ object Database extends DatabaseTypes {
       .unsafeRunSync
   }
 
-  def init(xa: PostgresTransactor) {
+  def init(xa: Transactor) {
     createSql().update.run.transact(xa).unsafeRunSync
-  }
-
-  def transactor(): Transactor.Aux[IO, Unit] = {
-    implicit val cs = IO.contextShift(ExecutionContext.global)
-    return Transactor.fromDriverManager[IO](
-      "org.postgresql.Driver",
-      "jdbc:postgresql:chessgame",
-      "postgres",
-      ""
-    )
   }
 
   def turnToTuple(gameid: Int, turn: Turn): (Int, Int, String, String) = {
@@ -77,10 +73,10 @@ object Database extends DatabaseTypes {
       .updateMany(turns.map(x => turnToTuple(1, x)))
   }
 
-  def insertGame(xa: PostgresTransactor, game: Game) {
+  def insertGame(xa: Transactor, game: Game) {
     val (id: Int) :: _ =
       sql"""INSERT INTO game (lichessid, winner)
-            VALUES (${game.lichessId}, ${game.winner})
+            VALUES (${game.id}, ${game.winner})
             RETURNING id"""
         .query[Int]
         .to[List]
@@ -90,7 +86,7 @@ object Database extends DatabaseTypes {
     insertTurns(id, game.turns).transact(xa).unsafeRunSync
   }
 
-  def gamesWithPly(xa: PostgresTransactor, ply: Ply): List[Int] = {
+  def gamesWithPly(xa: Transactor, ply: Ply): List[Int] = {
     val sql = if (ply.color == "white") {
       sql"""SELECT gameid FROM turn
           WHERE number = ${ply.number}
@@ -107,7 +103,7 @@ object Database extends DatabaseTypes {
       .unsafeRunSync
   }
 
-  def gamesWithTurn(xa: PostgresTransactor, turn: Turn): List[Int] = {
+  def gamesWithTurn(xa: Transactor, turn: Turn): List[Int] = {
     sql"""SELECT gameid FROM turn
           WHERE number = ${turn.number}
           AND white = ${turn.white}
@@ -118,7 +114,7 @@ object Database extends DatabaseTypes {
       .unsafeRunSync
   }
 
-  def turnQuery(xa: PostgresTransactor, id: Int, number: Int): List[Turn] = {
+  def turnQuery(xa: Transactor, id: Int, number: Int): List[Turn] = {
     sql"""SELECT number, white, black
           FROM turn
           WHERE gameid = ${id} AND number = ${number}"""
@@ -129,7 +125,7 @@ object Database extends DatabaseTypes {
   }
 
   def nextPlys(
-      xa: PostgresTransactor,
+      xa: Transactor,
       ids: List[Int],
       plys: List[Ply]
   ): List[Ply] = {

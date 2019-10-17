@@ -12,7 +12,23 @@ import org.apache.kafka.clients.producer._
 import java.text.ParseException
 import com.typesafe.scalalogging._
 
-object Consumer extends DatabaseTypes {
+object KafkaProducer {
+  def make(): KafkaProducer[String, String] = {
+    val props = new Properties()
+    props.put("bootstrap.servers", "localhost:9092")
+    props.put(
+      "key.serializer",
+      "org.apache.kafka.common.serialization.StringSerializer"
+    )
+    props.put(
+      "value.serializer",
+      "org.apache.kafka.common.serialization.StringSerializer"
+    )
+    return new KafkaProducer[String, String](props)
+  }
+}
+
+object KafkaConsumer {
   def make(): KafkaConsumer[String, String] = {
     val props = new Properties()
     props.put("bootstrap.servers", "localhost:9092")
@@ -29,15 +45,19 @@ object Consumer extends DatabaseTypes {
   }
 }
 
-case class GameConsumer(xa: Database.PostgresTransactor, logger: Logger)
+case class KafkaGameConsumer(xa: Postgres.Transactor, logger: Logger)
     extends Runnable {
 
-  val consumer = Consumer.make()
+  val consumer = KafkaConsumer.make()
 
-  def movesToTurns(moves: Array[Array[String]]): List[Turn] = {
-    moves
-      .zip(Stream.from(1))
+  // A movestring is a string like "e4 e5 Nf3 Nc6". This function turns
+  // this string into a list of Turns
+  def moveStringToTurns(moveString: String): List[Turn] = {
+    moveString
+      .split(" ")
+      .grouped(2)
       .toList
+      .zip(Stream.from(1))
       .map({
         case (xs, id) =>
           if (xs.length % 2 == 0) {
@@ -55,10 +75,9 @@ case class GameConsumer(xa: Database.PostgresTransactor, logger: Logger)
     val cursor = parse(jsonGame).getOrElse(Json.Null).hcursor
     val winner = cursor.downField("winner").as[String].getOrElse("none")
     val moveString = cursor.downField("moves").as[String]
-    val moves = moveString.map(x => x.split(" ").grouped(2).toArray)
-    (moves.map(movesToTurns)) match {
+    (moveString.map(moveStringToTurns)) match {
       case Right(turns) =>
-        Database.insertGame(xa, Database.Game(gameid, winner, turns))
+        Postgres.insertGame(xa, Game(gameid, winner, turns))
         logger.info("Done.")
       case _ =>
         logger.error("Could not parse: " + jsonGame)
@@ -72,8 +91,9 @@ case class GameConsumer(xa: Database.PostgresTransactor, logger: Logger)
       while (true) {
         val record = consumer.poll(1000).asScala
         for (data <- record.iterator) {
-          logger.info("Inserting game...")
-          decodeAndInsert(data.key(), data.value())
+          val key = data.key()
+          logger.info("Inserting game with id: " + key)
+          decodeAndInsert(key, data.value())
         }
       }
     } catch {
@@ -82,36 +102,30 @@ case class GameConsumer(xa: Database.PostgresTransactor, logger: Logger)
       consumer.close()
     }
   }
+
   def shutdown() {
     consumer.wakeup()
   }
 }
 
-object Producer {
-  def make(): KafkaProducer[String, String] = {
-    val props = new Properties()
-    props.put("bootstrap.servers", "localhost:9092")
-    props.put(
-      "key.serializer",
-      "org.apache.kafka.common.serialization.StringSerializer"
-    )
-    props.put(
-      "value.serializer",
-      "org.apache.kafka.common.serialization.StringSerializer"
-    )
-    return new KafkaProducer[String, String](props)
-  }
-}
-
-case class QueryConsumer(xa: Database.PostgresTransactor, logger: Logger)
+case class KafkaQueryConsumer(xa: Postgres.Transactor, logger: Logger)
     extends Runnable {
 
-  val consumer = Consumer.make()
-  val producer: KafkaProducer[String, String] = Producer.make()
+  val consumer = KafkaConsumer.make()
+  val producer = KafkaProducer.make()
 
-  def toTuple[A](xs: List[A]): (A, A) = {
-    (xs(0), xs(1))
+  def intersectAll[A](sets: List[Set[A]]): List[A] = {
+    return if (sets.isEmpty) {
+      List.empty
+    } else {
+      sets
+        .foldLeft(sets.head)({ (acc, x) =>
+          x.toSet.intersect(acc)
+        })
+        .toList
+    }
   }
+
   def produceSuggestion(jsonPlys: String) {
     val decodedPlys = decode[List[Ply]](jsonPlys)
     decodedPlys match {
@@ -119,21 +133,14 @@ case class QueryConsumer(xa: Database.PostgresTransactor, logger: Logger)
         logger.info("Could not parse Kafka message:" + error)
       case Right(plys) =>
         logger.info("Calculating suggestion...")
-        val games = plys.map(x => Database.gamesWithPly(xa, x).toSet)
-        val intersection = if (games.isEmpty) {
-          Set.empty
-        } else {
-          games.foldLeft(games.head) { (acc, x) =>
-            x.toSet.intersect(acc)
-          }
-        }
+        val games = plys.map(x => Postgres.gamesWithPly(xa, x).toSet)
         try {
           logger.info("Done.")
           producer.send(
             new ProducerRecord[String, String](
               "suggestion",
-              Database
-                .nextPlys(xa, intersection.toList, plys)
+              Postgres
+                .nextPlys(xa, intersectAll(games), plys)
                 .asJson
                 .noSpaces
             )

@@ -6,15 +6,16 @@ import java.lang.Runtime
 object Main extends App {
 
   val logger = Logger("chessmovedb-store")
-  val xa = Database.transactor()
-  val gameConsumer = GameConsumer(xa, logger)
-  val queryConsumer = QueryConsumer(xa, logger)
+  val xa = Postgres.transactor()
+  val gameConsumer = KafkaGameConsumer(xa, logger)
+  val queryConsumer = KafkaQueryConsumer(xa, logger)
+
   new Thread(gameConsumer).start
   new Thread(queryConsumer).start
   val mainThread = Thread.currentThread
 
   logger.info("Initializing database")
-  Database.init(xa)
+  Postgres.init(xa)
 
   Runtime.getRuntime
     .addShutdownHook(new Thread() {
